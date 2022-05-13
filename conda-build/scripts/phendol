@@ -1,0 +1,134 @@
+#!/bin/bash
+
+source_name=$(dirname "$0")
+format_source="$source_name/blast2out.py"
+
+pdown=75.0
+subsample=0
+spades_threads=16
+sub_cov=0.5
+fasta_sort="nm"
+reads1=""
+reads2=""
+min_length=40
+uniprot=0
+dry=""
+database="$source_name/lysin_database"
+_usage="
+Usage: phendol [options] -r1 <reads1> -r2 <reads2>
+
+Required:
+-r1                    file with forward paired-end reads
+-r2                    file with reverse paired-end reads
+
+Optional:
+-h/--help              prints this usage message
+-s/--subsample         sample amount of reads from input
+                       (can be used to reduce RAM requirement)
+-t/--threads           how many threads should SPAdes use
+                       [defaullt: 16]
+-db/--database	       directory containing endolysin database for blast search
+-p                     minimal percentage of identical matches in blast search
+                       [default: 75.0]
+-c/--coverage          minimal percentage of coverage of subject from database in blast search
+                       [default: 0.5]
+-d/--dry               dry run
+
+Output format:
+-u/--uniprot           include uniprot accesion of hits on predicted endolysin
+-ml/--min_length       minimal length of predicted endolysin
+                       [default: 40]
+-f/--sort              sorting option for predicted endolysins:
+                         nm = name [default]
+                         sl = sequence length
+                         cv = percentage of sequence covered by hits
+			             ht = number of hits on sequence
+"
+
+# -p 0.0
+# -s 2000000
+# -t 16
+# -c 0.0
+# -f "nm"
+# -r1
+# -r2
+
+
+while [[ $# -gt 0 ]]; do
+	case $1 in
+		-p)
+			pdown="$2"
+			shift
+			shift
+			;;
+		-s|--subsample)
+			subsample="$2"
+			shift
+			shift
+			;;
+		-t|--threads)
+			spades_threads="$2"
+			shift
+			shift
+			;;
+		-c|--coverage)
+			sub_cov="$2"
+			shift
+			shift
+			;;
+		-f|--sort)
+			fasta_sort="$2"
+			shift
+			shift
+			;;
+		-r1)
+			reads1="$2"
+			shift
+			shift
+			;;
+		-r2)
+			reads2="$2"
+			shift
+			shift
+			;;
+		-ml|--min_length)
+			min_length="$2"
+			shift
+			shift
+			;;
+		-u|--uniprot)
+			uniprot=1
+			shift
+			;;
+		-d|--dry)
+			dry="-n"
+			shift
+			;;
+		-h|--help)
+			echo "$_usage"
+			exit 0
+			;;
+		-db|--database)
+			database="$2"
+			shift
+			shift
+			;;
+	esac
+done
+if [ -z $reads1 ] || [ -z $reads2 ]
+then
+	echo "r1 and r2 are not optional"
+	exit 1
+fi
+if [ $subsample -eq 0 ]
+then
+	subsample= $(zgrep -c '^>' $reads1)
+fi
+delimiter=_R1
+reads_name="${reads1%"$delimiter"*}"
+delimiter="/"
+reads_name="${reads_name##*"$delimiter"}"
+echo $reads_name
+
+snakemake -s $source_name/Snakefile align/$reads_name/results/endolysins.fasta -c4 $dry --config r1=$reads1 r2=$reads2 pdown=$pdown subsample=$subsample spades_threads=$spades_threads sub_cov=$sub_cov fasta_sort=$fasta_sort min_length=$min_length uniprot=$uniprot database=$database format_source=$format_source
+exit 0

@@ -1,0 +1,83 @@
+
+rule preprocess:
+    output:
+        "{sample}_R1_sample.fastq.gz",
+        "{sample}_R2_sample.fastq.gz"
+    params:
+        r1= config["r1"],
+        r2= config["r2"],
+        subsamp = config["subsample"]
+    shell:
+        """
+        seqtk sample -s100 {params.r1} {params.subsamp} | gzip > {output[0]}
+        seqtk sample -s100 {params.r2} {params.subsamp} | gzip > {output[1]}
+        """
+
+rule align_seq:
+    input:
+        reads1="{sample}_R1_sample.fastq.gz",
+        reads2="{sample}_R2_sample.fastq.gz"
+    output:
+        "align/{sample}/results/contigs.fasta",
+        "align/{sample}/results/assembly_graph_with_scaffolds.gfa"
+    params:
+        "align/{sample}/align_seq",
+        config["spades_threads"],
+	"align/{sample}/sample"
+    shell:
+        """
+        spades.py -1 {input.reads1} -2 {input.reads2} -o {params[0]} -t {params[1]}
+        cat {params[0]}/contigs.fasta | awk 'BEGIN {{ FS = "_" }} ; {{ if($0 ~ /^>/) {{print $1 "_" $2}} else {{print}} }}' | awk '{{if(NR==1) {{print $0}} else {{if($0 ~ /^>/) {{print "\\n"$0}} else {{printf $0}} }} }}' > {output[0]}
+        cp {params[0]}/assembly_graph_with_scaffolds.gfa {output[1]}
+	mkdir {params[2]}
+	mv {input.reads1} {params[2]}
+	mv {input.reads2} {params[2]}
+        """
+
+rule create_bed:
+    input:
+        "align/{sample}/results/contigs.fasta"
+    output:
+        "align/{sample}/bed/bed_phanotate.bed6"
+    shell:
+        """
+        phanotate.py {input} | grep -v '^#' | awk '{{if($1<$2) print $4,$1-1,$2,$4,".",$3; else print $4,$2-1,$1,$4,".",$3}}' | sed -e 's/ /\t/g' > {output}
+        """
+
+rule find_ORF:
+    input:
+        "align/{sample}/results/contigs.fasta",
+        "align/{sample}/bed/bed_phanotate.bed6"
+    output:
+        "align/{sample}/results/ORF_phanotate.fasta"
+    shell:
+        """
+        bedtools getfasta -fi {input[0]} -bed {input[1]} -s | sed -r 's/:/_/g' > {output}
+        """
+
+rule nucleotide_to_protein:
+    input:
+        "align/{sample}/results/ORF_phanotate.fasta"
+    output:
+        "align/{sample}/prot_ORF/ORF_amino.fasta"
+    shell:
+        "transeq -sequence {input} -outseq {output}"
+
+rule anotate:
+    input:
+        "align/{sample}/prot_ORF/ORF_amino.fasta"
+    output:
+        "align/{sample}/results/endolysins.fasta"
+    params:
+        config["pdown"],
+        config["sub_cov"],
+        config["fasta_sort"],
+        config["min_length"],
+        config["uniprot"],
+	config["database"],
+	config["format_source"]
+    shell:
+        """
+	export BLASTDB={params[5]}
+        blastp -query {input} -outfmt '6 qseqid sseqid qstart qend pident length slen' -db {params[5]}/endolysins.fasta | awk '{{if($5>={params[0]} && $6/$7>={params[1]}) print}}' | python3 {params[6]} {input} {params[2]} {params[3]} {params[4]} > {output}
+        """

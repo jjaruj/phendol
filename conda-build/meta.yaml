@@ -1,0 +1,31 @@
+package:
+  name: "phendol"
+  version: "0.1"
+
+source:
+  path: ./scripts
+
+build:
+  noarch: generic
+  number: 0
+
+requirements:
+  run:
+    - python
+    - blast
+    - biopython
+    - snakemake
+    - bedtools
+    - emboss
+    - phanotate
+    - spades
+    - seqtk
+
+test:
+  commands:
+    - phendol -h
+
+about:
+  summary: Prediction of phage endolysins
+
+
